@@ -60,7 +60,14 @@ class LocalHFBackend:
         )
 
     def generate(self, prompt: str) -> str:
-        messages = [{"role": "user", "content": prompt}]
+        divider = "\nCURRENT_TASK="
+        if divider not in prompt:
+            raise ValueError("assembled prompt is missing CURRENT_TASK divider")
+        system_content, task_content = prompt.split(divider, 1)
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": "CURRENT_TASK=" + task_content},
+        ]
         rendered = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.tokenizer(rendered, return_tensors="pt").to(self.model.device)
         with self.torch.inference_mode():
