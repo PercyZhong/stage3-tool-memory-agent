@@ -79,9 +79,29 @@ def aggregate(task_metrics: list[dict[str, Any]], arm: str, seed: int) -> dict[s
     }
 
 
-def _examples(tasks: list[dict[str, Any]], responses: list[dict[str, Any]], metrics: list[dict[str, Any]]) -> str:
+def _examples(
+    tasks: list[dict[str, Any]], responses: list[dict[str, Any]], metrics: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> str:
     metric_by_id = {row["task_id"]: row for row in metrics}
-    lines = ["# Trace examples", "", "These are synthetic tasks. Full machine events are in `events.jsonl`.", ""]
+    explanations = {
+        "memory_write": "persist a setup or model-requested memory",
+        "model_request": "assemble the bounded, target-free prompt",
+        "model_response": "record the backend's raw response",
+        "parsed_action": "parse and schema-check exactly one action",
+        "tool_observation": "record the deterministic local tool result",
+        "tool_error": "record a rejected or disabled tool call",
+        "memory_search": "retrieve ranked active records for this user namespace",
+        "memory_invalidate": "mark matching stale records invalid without overwriting them",
+        "memory_error": "record a disabled memory operation",
+        "error": "record an invalid or duplicate action",
+        "final_answer": "record structured fields, citations, and user text",
+        "termination": "record an explicit non-success termination",
+    }
+    lines = [
+        "# Trace examples", "",
+        "These are synthetic tasks. Every event for each selected task is listed below; full canonical inputs, outputs, hashes, and source IDs are in `events.jsonl`.", "",
+    ]
     for task_type in ("multi_tool", "cross_session_memory", "conflict_update"):
         candidates = [task for task in tasks if task["task_type"] == task_type]
         success = next((task for task in candidates if metric_by_id[task["task_id"]]["success"]), None)
@@ -99,6 +119,13 @@ def _examples(tasks: list[dict[str, Any]], responses: list[dict[str, Any]], metr
                 f"- Success: {metric_by_id[task['task_id']]['success']}",
                 f"- Evidence valid: {metric_by_id[task['task_id']]['evidence_valid']}", "",
             ])
+            task_events = [event for event in events if event["task_id"] == task["task_id"]]
+            lines.append("Complete event sequence:")
+            lines.append("")
+            for event in task_events:
+                explanation = explanations.get(event["event_type"], "record the state-machine transition")
+                lines.append(f"1. seq `{event['seq']}` · `{event['event_type']}` · `{event['status']}` — {explanation}.")
+            lines.append("")
     return "\n".join(lines) + "\n"
 
 
@@ -181,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     metrics = aggregate(task_metrics, args.arm, args.seed)
     write_json(args.out / "metrics.json", metrics)
     write_json(args.out / "errors.json", errors)
-    (args.out / "examples.md").write_text(_examples(tasks, responses, task_metrics), encoding="utf-8")
+    (args.out / "examples.md").write_text(_examples(tasks, responses, task_metrics, log.events), encoding="utf-8")
     memory_path.unlink(missing_ok=True)
 
     fixture_files = sorted({fixture_path(repo_root, task["fixture_version"]) for task in tasks})
