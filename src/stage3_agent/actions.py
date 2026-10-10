@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any
+
+
+class ActionError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class Action:
+    kind: str
+    payload: dict[str, Any]
+
+
+def parse_action(raw: str) -> Action:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ActionError(f"invalid JSON: {exc.msg}") from exc
+    if not isinstance(value, dict) or len(value) != 1:
+        raise ActionError("action must be an object with exactly one of tool_call, memory_call, final")
+    kind, payload = next(iter(value.items()))
+    if kind not in {"tool_call", "memory_call", "final"} or not isinstance(payload, dict):
+        raise ActionError(f"unsupported action: {kind}")
+    if kind == "tool_call":
+        if set(payload) != {"name", "arguments"} or not isinstance(payload["name"], str) or not isinstance(payload["arguments"], dict):
+            raise ActionError("tool_call requires name:string and arguments:object")
+    elif kind == "memory_call":
+        operation = payload.get("operation")
+        if operation not in {"search", "write", "invalidate"}:
+            raise ActionError("memory_call operation must be search, write, or invalidate")
+        if operation in {"search", "invalidate"} and not isinstance(payload.get("query"), str):
+            raise ActionError(f"memory {operation} requires query:string")
+        if operation == "write" and not isinstance(payload.get("content"), dict):
+            raise ActionError("memory write requires content:object")
+    else:
+        if not isinstance(payload.get("answer"), dict) or not isinstance(payload.get("evidence_ids"), list):
+            raise ActionError("final requires answer:object and evidence_ids:list")
+        if not isinstance(payload.get("text"), str):
+            raise ActionError("final requires text:string")
+    return Action(kind, payload)

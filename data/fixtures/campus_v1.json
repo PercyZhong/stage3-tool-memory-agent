@@ -1,0 +1,24 @@
+{
+  "fixture_version": "v1",
+  "synthetic": true,
+  "source": "synthetic-campus-v1",
+  "schedules": [
+    {"record_id":"SCH-CS101","course":"CS101","day":"Wednesday","start":"18:00","end":"19:30","location":"Room A101","accessible":true},
+    {"record_id":"SCH-ART210","course":"ART210","day":"Wednesday","start":"16:00","end":"17:30","location":"Studio B","accessible":false},
+    {"record_id":"SCH-MATH115","course":"MATH115","day":"Tuesday","start":"09:00","end":"10:30","location":"Room C203","accessible":true},
+    {"record_id":"SCH-BIO120","course":"BIO120","day":"Friday","start":"14:00","end":"15:30","location":"Lab D1","accessible":true}
+  ],
+  "events": [
+    {"record_id":"EV-PHOTO-WED","name":"Photography Walk","day":"Wednesday","start":"19:00","end":"20:30","location":"North Gate","accessible":true,"policy_id":"POL-PHOTO"},
+    {"record_id":"EV-CHESS-WED","name":"Chess Night","day":"Wednesday","start":"17:00","end":"18:00","location":"Library 2F","accessible":true,"policy_id":"POL-OPEN"},
+    {"record_id":"EV-MUSIC-FRI","name":"Music Jam","day":"Friday","start":"18:30","end":"20:00","location":"Hall M","accessible":false,"policy_id":"POL-MUSIC"},
+    {"record_id":"EV-CODE-TUE","name":"Coding Clinic","day":"Tuesday","start":"18:00","end":"19:00","location":"Innovation Hub","accessible":true,"policy_id":"POL-OPEN"},
+    {"record_id":"EV-GARDEN-SAT","name":"Garden Morning","day":"Saturday","start":"09:00","end":"11:00","location":"Greenhouse","accessible":true,"policy_id":"POL-GARDEN"}
+  ],
+  "policies": [
+    {"record_id":"POL-PHOTO","topic":"photography","eligible":"all_students","registration":"required","deadline":"Tuesday 17:00"},
+    {"record_id":"POL-OPEN","topic":"open_events","eligible":"all_students","registration":"not_required","deadline":null},
+    {"record_id":"POL-MUSIC","topic":"music","eligible":"members_or_guests","registration":"required","deadline":"Thursday 12:00"},
+    {"record_id":"POL-GARDEN","topic":"garden","eligible":"all_students","registration":"required","deadline":"Friday 12:00"}
+  ]
+}

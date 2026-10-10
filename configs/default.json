@@ -1,0 +1,9 @@
+{
+  "context_char_budget": 12000,
+  "max_actions": 8,
+  "max_input_chars": 256,
+  "max_new_tokens": 512,
+  "model_hint": "Qwen/Qwen2.5-0.5B-Instruct (authorized local directory only)",
+  "seeds": [42, 123],
+  "temperature": 0.0
+}
