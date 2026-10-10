@@ -46,12 +46,12 @@ def assemble_prompt(task: dict[str, Any], history: list[dict[str, Any]], budget:
 def execute_task(
     task: dict[str, Any], backend: Any, tools: CampusTools, memory: MemoryStore,
     log: EventLog, responses: list[dict[str, Any]], arm: str, max_actions: int, context_budget: int,
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     started = time.perf_counter()
     history: list[dict[str, Any]] = []
     seen_calls: set[str] = set()
     counters = {"tool_calls": 0, "memory_reads": 0, "memory_writes": 0, "invalid_action": 0, "step_limit": False}
-    final_payload = {"answer": {"unknown": True}, "evidence_ids": [], "text": "No final answer."}
+    final_payload: dict[str, Any] | None = None
     observed_ids: set[str] = set()
     stale_ids = {
         str(task.get("memory_fact", {}).get("record_id", ""))
@@ -74,6 +74,11 @@ def execute_task(
             log.add(task, "error", {"raw_response": raw}, error, status="error")
             history.append(error)
             if counters["invalid_action"] > 1:
+                log.add(
+                    task, "termination", {"step": step},
+                    {"reason": "invalid_action_limit", "invalid_actions": counters["invalid_action"]},
+                    status="error",
+                )
                 break
             continue
 
@@ -130,10 +135,10 @@ def execute_task(
         counters["step_limit"] = True
         log.add(task, "termination", {"max_actions": max_actions}, {"reason": "step_limit"}, status="error")
 
-    evidence_ids = set(final_payload.get("evidence_ids", []))
+    evidence_ids = set(final_payload.get("evidence_ids", [])) if final_payload is not None else set()
     required_ids = set(task["required_evidence_ids"])
     evidence_valid = bool(required_ids) and required_ids <= evidence_ids and evidence_ids <= observed_ids
-    fields_match = final_payload.get("answer") == task["target_fields"]
+    fields_match = final_payload is not None and final_payload.get("answer") == task["target_fields"]
     success = fields_match and evidence_valid
     stale_fact_error = bool(stale_ids & evidence_ids)
     metrics = {

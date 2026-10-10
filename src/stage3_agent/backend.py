@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .canonical import canonical_json
+from .canonical import canonical_json, state_hash
 
 
 class ScriptedBackend:
@@ -65,7 +65,8 @@ class LocalHFBackend:
         inputs = self.tokenizer(rendered, return_tensors="pt").to(self.model.device)
         with self.torch.inference_mode():
             output = self.model.generate(
-                **inputs, do_sample=False, temperature=None, top_p=None, max_new_tokens=self.max_new_tokens
+                **inputs, do_sample=False, temperature=None, top_p=None,
+                max_new_tokens=self.max_new_tokens, pad_token_id=self.tokenizer.eos_token_id,
             )
         new_tokens = output[0][inputs["input_ids"].shape[1]:]
         return self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
@@ -76,4 +77,7 @@ def backend_metadata(backend: Any, model_dir: Path | None) -> dict[str, Any]:
     if model_dir is not None:
         result["model_dir"] = str(model_dir.resolve())
         result["local_files_only"] = True
+        if hasattr(backend, "tokenizer"):
+            result["tokenizer_class"] = type(backend.tokenizer).__name__
+            result["chat_template_hash"] = state_hash(backend.tokenizer.chat_template or "")
     return result

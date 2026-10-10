@@ -8,6 +8,8 @@ import platform
 import sys
 from pathlib import Path
 
+from .canonical import state_hash
+
 
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(description="Offline local-model preflight; never downloads weights")
@@ -38,6 +40,22 @@ def main(argv: list[str] | None = None) -> int:
         except importlib.metadata.PackageNotFoundError:
             versions[package] = "not-installed"
             errors.append(f"required package not installed: {package}")
+    tokenizer = {"loadable": False, "class": None, "has_chat_template": False, "chat_template_hash": None}
+    if model_dir.is_dir() and versions.get("transformers") != "not-installed":
+        try:
+            from transformers import AutoTokenizer
+
+            loaded_tokenizer = AutoTokenizer.from_pretrained(str(model_dir), local_files_only=True)
+            tokenizer = {
+                "loadable": True,
+                "class": type(loaded_tokenizer).__name__,
+                "has_chat_template": bool(loaded_tokenizer.chat_template),
+                "chat_template_hash": state_hash(loaded_tokenizer.chat_template or ""),
+            }
+            if not loaded_tokenizer.chat_template:
+                errors.append("tokenizer has no chat template")
+        except Exception as exc:
+            errors.append(f"tokenizer cannot be loaded offline: {type(exc).__name__}: {exc}")
     cuda = {"available": False, "device_count": 0}
     try:
         import torch
@@ -49,7 +67,8 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "ok": not errors, "errors": errors, "python": platform.python_version(),
         "executable": sys.executable, "model_dir": str(model_dir), "packages": versions,
-        "cuda": cuda, "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", "not-set"),
+        "tokenizer": tokenizer, "cuda": cuda,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", "not-set"),
         "offline_loading_required": True,
     }
     print(json.dumps(report, sort_keys=True))

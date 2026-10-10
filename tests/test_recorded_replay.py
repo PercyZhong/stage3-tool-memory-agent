@@ -54,3 +54,31 @@ def test_all_three_scripted_arms_are_independent(tmp_path, monkeypatch):
         namespaces = {item["namespace"] for item in json.loads((run_dir / "memory_after.json").read_text(encoding="utf-8"))}
         assert all(f":{arm}:" in namespace for namespace in namespaces)
     assert successes == {"full": 12, "no_memory": 8, "no_tools": 0}
+
+
+def test_invalid_backend_terminates_without_inventing_final(tmp_path, monkeypatch):
+    class InvalidBackend:
+        name = "scripted"
+
+        def generate(self, prompt):
+            del prompt
+            return "not valid JSON"
+
+    monkeypatch.setattr("stage3_agent.run.ScriptedBackend", lambda task, arm: InvalidBackend())
+    monkeypatch.chdir(ROOT)
+    run_dir = tmp_path / "invalid-run"
+    replay_dir = tmp_path / "invalid-replay"
+    assert run_main([
+        "--backend", "scripted", "--suite", str(ROOT / "data" / "tasks.jsonl"),
+        "--arm", "full", "--out", str(run_dir),
+    ]) == 0
+    metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert metrics["completed"] == 12
+    assert metrics["successes"] == 0
+    assert all(task["final"] is None for task in metrics["tasks"])
+    events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    terminations = [event for event in events if event["event_type"] == "termination"]
+    assert len(terminations) == 12
+    assert all(event["output"]["reason"] == "invalid_action_limit" for event in terminations)
+    assert replay_main(["--run", str(run_dir), "--mode", "recorded", "--out", str(replay_dir)]) == 0
+    assert verify_main(["--run", str(run_dir), "--replay", str(replay_dir)]) == 0

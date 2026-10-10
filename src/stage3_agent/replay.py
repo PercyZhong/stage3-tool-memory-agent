@@ -132,7 +132,7 @@ def validate_recording(run: Path, from_task: str | None = None) -> tuple[list[st
     metrics = read_json(run / "metrics.json")
     finals = {event["task_id"]: event["output"] for event in events if event["event_type"] == "final_answer"}
     for task in metrics.get("tasks", []):
-        if task.get("completed") and task.get("final") != finals.get(task["task_id"]):
+        if task.get("final") != finals.get(task["task_id"]):
             errors.append(f"final answer mismatch for {task['task_id']}")
     return errors, {"checked_events": checked_events, "checked_responses": response_position, "reconstructed_memories": len(actual_memory)}
 
