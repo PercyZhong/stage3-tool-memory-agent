@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,6 +16,15 @@ class Action:
     payload: dict[str, Any]
 
 
+_EXACT_JSON_FENCE = re.compile(r"\A```json[ \t]*\r?\n(?P<body>.*)\r?\n```[ \t]*\Z", re.DOTALL)
+
+
+def _unwrap_exact_json_fence(raw: str) -> str:
+    """Accept only a single JSON fence occupying the complete model response."""
+    match = _EXACT_JSON_FENCE.fullmatch(raw)
+    return match.group("body") if match else raw
+
+
 def parse_action(raw: str) -> Action:
     def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         value: dict[str, Any] = {}
@@ -25,7 +35,7 @@ def parse_action(raw: str) -> Action:
         return value
 
     try:
-        value = json.loads(raw, object_pairs_hook=reject_duplicate_keys)
+        value = json.loads(_unwrap_exact_json_fence(raw), object_pairs_hook=reject_duplicate_keys)
     except json.JSONDecodeError as exc:
         raise ActionError(f"invalid JSON: {exc.msg}") from exc
     if not isinstance(value, dict) or len(value) != 1:

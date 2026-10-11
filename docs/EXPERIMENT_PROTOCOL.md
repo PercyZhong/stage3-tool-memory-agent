@@ -37,6 +37,8 @@ Aggregate numerator and denominator by task type, arm, and seed. `evaluate` incl
 
 Recorded replay validates required-file presence, manifest hashes, checkout source hashes, continuous sequence numbers, the event hash chain, prompt hashes, every saved raw response through the same action parser, action-to-recorded-transition arguments, response exhaustion, reconstructed memory, and final answers. It copies verified artifacts into a separate replay directory. `verify` requires zero replay errors and byte-identical events, responses, memory, and metrics.
 
+The action parser accepts either a bare JSON object or one lower-case `json` fenced block that occupies the entire response. This deterministic compatibility rule does not accept surrounding prose, multiple blocks, duplicate JSON keys, multiple action types, or malformed action schemas; the unmodified model response remains in the event and response logs.
+
 The negative test modifies an event without updating its hashes or manifest and requires replay to return nonzero. This is tamper evidence, not a cryptographic signature against an attacker able to rewrite every local artifact.
 
 ## Reporting
