@@ -16,7 +16,7 @@ The scripted backend is an engineering oracle for offline tests. It is not a sub
 
 ## Safety and data boundaries
 
-`local_hf` accepts only an existing local directory and calls Transformers with `local_files_only=True`. Nothing downloads weights. Model prompts contain the current public task fields only; targets, required evidence, expected behavior, setup facts, and scripted actions are excluded. Tools accept limited typed arguments and read local JSON only. Tool output is presented as untrusted data.
+`local_hf` accepts only an existing local directory and calls Transformers with `local_files_only=True`. Nothing downloads weights. Model prompts contain the current public task fields plus the final answer's field names and primitive types so exact scoring has a declared output contract. Target values, required evidence, expected behavior, setup facts, and scripted actions are excluded. Tools accept limited typed arguments and read local JSON only. Tool output is presented as untrusted data.
 
 No real student data appears here. User IDs all begin with `synthetic-`. Model weights, runtime SQLite files, complete `runs/`, archives, caches, environment files, and secrets are ignored by Git.
 

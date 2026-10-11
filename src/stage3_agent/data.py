@@ -8,7 +8,7 @@ from .canonical import read_json, read_jsonl
 TASK_TYPES = {"multi_tool", "cross_session_memory", "conflict_update"}
 TOOLS = {"lookup_schedule", "find_events", "lookup_policy"}
 PUBLIC_TASK_FIELDS = {
-    "task_id", "task_type", "session_id", "user_id", "fixture_version", "input", "allowed_tools"
+    "task_id", "task_type", "session_id", "user_id", "fixture_version", "input", "allowed_tools",
 }
 FORBIDDEN_PROMPT_FIELDS = {
     "target_fields", "required_evidence_ids", "expected_behavior", "script_plan", "memory_fact",
@@ -29,7 +29,7 @@ def validate_tasks(tasks: list[dict[str, Any]]) -> None:
     counts = {kind: 0 for kind in TASK_TYPES}
     required = {
         "task_id", "task_type", "session_id", "user_id", "fixture_version", "input",
-        "allowed_tools", "required_evidence_ids", "target_fields", "expected_behavior", "script_plan"
+        "allowed_tools", "required_evidence_ids", "target_fields", "expected_behavior", "script_plan",
     }
     for task in tasks:
         missing = sorted(required - task.keys())
@@ -46,6 +46,11 @@ def validate_tasks(tasks: list[dict[str, Any]]) -> None:
         unknown = set(task["allowed_tools"]) - TOOLS
         if unknown:
             raise ValueError(f"{task_id}: unknown allowed tools: {sorted(unknown)}")
+        if not task["target_fields"] or any(
+            not isinstance(key, str) or not isinstance(value, (str, bool))
+            for key, value in task["target_fields"].items()
+        ):
+            raise ValueError(f"{task_id}: target fields must be non-empty string/boolean values")
         if not str(task["user_id"]).startswith("synthetic-"):
             raise ValueError(f"{task_id}: user_id must be explicitly synthetic")
     if any(value < 4 for value in counts.values()):
@@ -54,6 +59,10 @@ def validate_tasks(tasks: list[dict[str, Any]]) -> None:
 
 def public_task(task: dict[str, Any]) -> dict[str, Any]:
     public = {key: task[key] for key in PUBLIC_TASK_FIELDS if key in task}
+    public["answer_schema"] = {
+        key: "boolean" if isinstance(value, bool) else "string"
+        for key, value in task["target_fields"].items()
+    }
     if FORBIDDEN_PROMPT_FIELDS & public.keys():
         raise AssertionError("evaluation data leaked into public task")
     return public

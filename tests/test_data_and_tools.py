@@ -15,7 +15,10 @@ def test_suite_has_four_tasks_per_category_and_no_prompt_leakage():
     counts = {}
     for task in tasks:
         counts[task["task_type"]] = counts.get(task["task_type"], 0) + 1
-        assert not (FORBIDDEN_PROMPT_FIELDS & public_task(task).keys())
+        public = public_task(task)
+        assert not (FORBIDDEN_PROMPT_FIELDS & public.keys())
+        assert set(public["answer_schema"]) == set(task["target_fields"])
+        assert set(public["answer_schema"].values()) <= {"string", "boolean"}
     assert counts == {"multi_tool": 4, "cross_session_memory": 4, "conflict_update": 4}
 
 
@@ -45,8 +48,9 @@ def test_prompt_requires_grounding_and_contains_no_evaluation_targets():
     assert '"required_type":"tool_call"' in prompt
     assert '"allowed_names":["find_events","lookup_policy"]' in prompt
     assert prompt.endswith(
-        '{"tool_call":{"name":"find_events","arguments":{}}}'
+        'its name must be "find_events" and its arguments must be a JSON object of relevant filters.'
     )
+    assert '"answer_schema":{"day":"string","event":"string","registration":"string"}' in prompt
     assert trimming["kept_history_items"] == 0
     for forbidden in FORBIDDEN_PROMPT_FIELDS:
         assert f'"{forbidden}"' not in prompt
@@ -73,7 +77,8 @@ def test_prompt_exposes_exactly_one_state_dependent_next_action():
     prompt, _ = assemble_prompt(tool_task, after_both_tools, 12000)
     assert '"required_type":"final"' in prompt
     assert "This turn is only the final answer" in prompt
-    assert '"evidence_ids":[]' in prompt
+    assert '"available_evidence_ids":[]' in prompt
+    assert '"result"' not in prompt
 
     memory_task = next(task for task in tasks if task["task_type"] == "cross_session_memory")
     prompt, _ = assemble_prompt(memory_task, [], 12000)
@@ -102,10 +107,12 @@ def test_prompt_exposes_exactly_one_state_dependent_next_action():
     prompt, _ = assemble_prompt(update_task, update_history, 12000)
     assert '"allowed_operations":["invalidate"]' in prompt
     assert "This turn is only a stale-memory invalidation" in prompt
+    assert '"query":"CS101 schedule"' in prompt
+    assert "stale memory keywords" not in prompt
     update_history.append({
         "memory_call": {"operation": "invalidate", "query": "CS101 schedule"},
         "result": [],
     })
     prompt, _ = assemble_prompt(update_task, update_history, 12000)
     assert '"required_type":"final"' in prompt
-    assert '"evidence_ids":["SCH-CS101-R2"]' in prompt
+    assert '"available_evidence_ids":["SCH-CS101-R2"]' in prompt

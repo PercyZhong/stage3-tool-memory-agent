@@ -36,6 +36,7 @@ def _action_state(task: dict[str, Any], history: list[dict[str, Any]], arm: str)
     used_tools: set[str] = set()
     observed_ids: list[str] = []
     memory_searched = False
+    memory_search_query: str | None = None
     memory_invalidated = False
     for item in history:
         tool_call = item.get("tool_call")
@@ -55,6 +56,8 @@ def _action_state(task: dict[str, Any], history: list[dict[str, Any]], arm: str)
             operation = memory_call.get("operation")
             if operation == "search":
                 memory_searched = True
+                if isinstance(memory_call.get("query"), str):
+                    memory_search_query = memory_call["query"]
             elif operation == "invalidate":
                 memory_invalidated = True
             if isinstance(operation, str):
@@ -65,6 +68,11 @@ def _action_state(task: dict[str, Any], history: list[dict[str, Any]], arm: str)
         guidance = {
             "required_type": "memory_call",
             "allowed_operations": ["search"],
+            "search_goal": (
+                "retrieve the user's stored preference; include the word preference and its relevant dimension"
+                if task["task_type"] == "cross_session_memory"
+                else "retrieve the stale fact about the entity named in the current input"
+            ),
             "format": {"memory_call": {"operation": "search", "query": "<short relevant query>"}},
         }
     else:
@@ -74,7 +82,7 @@ def _action_state(task: dict[str, Any], history: list[dict[str, Any]], arm: str)
             guidance = {
                 "required_type": "tool_call",
                 "allowed_names": unused_tools,
-                "format": {"tool_call": {"name": "<one allowed name>", "arguments": {}}},
+                "required_payload_fields": ["name", "arguments"],
             }
         elif (
             arm not in {"no_memory", "no_tools"} and task["task_type"] == "conflict_update"
@@ -90,18 +98,14 @@ def _action_state(task: dict[str, Any], history: list[dict[str, Any]], arm: str)
                     }
                 },
             }
+            guidance["reuse_search_query"] = memory_search_query
         else:
             guidance = {
                 "required_type": "final",
+                "answer_schema": public_task(task)["answer_schema"],
                 "available_evidence_ids": observed_ids,
                 "evidence_rule": "Use only IDs from available_evidence_ids; use an empty list when none apply.",
-                "format": {
-                    "final": {
-                        "answer": {"result": "<structured result or unknown>"},
-                        "evidence_ids": observed_ids,
-                        "text": "<brief user-facing answer>",
-                    }
-                },
+                "required_payload_fields": ["answer", "evidence_ids", "text"],
             }
     return completed, guidance
 
@@ -111,37 +115,52 @@ def _turn_contract(next_action: dict[str, Any]) -> str:
     if required == "tool_call":
         allowed = canonical_json(next_action["allowed_names"])
         selected = canonical_json(next_action["allowed_names"][0])
+        argument_rules = {
+            "find_events": (
+                "arguments may use day, query, and accessible. Use day for a requested weekday; "
+                "use query only for event-name/category words; use accessible for an accessibility filter."
+            ),
+            "lookup_schedule": "arguments may use course and day. Copy the requested course/day from CURRENT_TASK.input.",
+            "lookup_policy": "arguments must contain topic with the relevant event or policy words from CURRENT_TASK.input.",
+        }[next_action["allowed_names"][0]]
         return (
             "MANDATORY_NEXT_RESPONSE:\n"
             "This turn is only a tool selection. Do not answer the user and do not emit final or memory_call.\n"
             f"Choose exactly one name from {allowed}.\n"
-            'Output one bare JSON object with exactly this structure: '
-            f'{{"tool_call":{{"name":{selected},"arguments":{{}}}}}}'
+            f"{argument_rules}\n"
+            "Do not copy descriptive placeholder text and do not leave arguments empty when the input provides a filter.\n"
+            f"Output one bare JSON object whose only top-level key is tool_call; "
+            f"its name must be {selected} and its arguments must be a JSON object of relevant filters."
         )
     if required == "memory_call":
         operation = next_action["allowed_operations"][0]
         if operation == "search":
+            goal = next_action["search_goal"]
             return (
                 "MANDATORY_NEXT_RESPONSE:\n"
                 "This turn is only a persistent-memory search. Do not answer the user and do not emit tool_call or final.\n"
+                f"Search goal: {goal}.\n"
                 'Output one bare JSON object with exactly this structure: '
                 '{"memory_call":{"operation":"search","query":"short relevant keywords"}}'
             )
+        query = canonical_json(next_action["reuse_search_query"])
         return (
             "MANDATORY_NEXT_RESPONSE:\n"
             "This turn is only a stale-memory invalidation. Do not answer the user and do not emit tool_call or final.\n"
+            "Reuse exactly the same query that successfully retrieved the stale memory.\n"
             'Output one bare JSON object with exactly this structure: '
-            '{"memory_call":{"operation":"invalidate","query":"stale memory keywords",'
+            f'{{"memory_call":{{"operation":"invalidate","query":{query},'
             '"reason":"superseded by authoritative current tool record"}}'
         )
     evidence = canonical_json(next_action["available_evidence_ids"])
+    schema = canonical_json(next_action["answer_schema"])
     return (
         "MANDATORY_NEXT_RESPONSE:\n"
         "This turn is only the final answer. Do not emit tool_call or memory_call.\n"
-        f"evidence_ids may contain only IDs from {evidence}.\n"
-        'Output one bare JSON object with exactly this structure: '
-        '{"final":{"answer":{"result":"grounded result"},'
-        f'"evidence_ids":{evidence},"text":"brief grounded answer"}}}}'
+        f"The answer object must use exactly this public field/type schema: {schema}.\n"
+        "Replace type names with grounded JSON values; never use a generic result field.\n"
+        f"Choose only relevant evidence_ids from this observed list: {evidence}. Do not automatically copy the whole list.\n"
+        "Output one bare JSON object with top-level key final. Its final object must contain answer, evidence_ids, and text."
     )
 
 
