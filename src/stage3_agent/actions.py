@@ -16,8 +16,16 @@ class Action:
 
 
 def parse_action(raw: str) -> Action:
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise ActionError(f"duplicate JSON key: {key}")
+            value[key] = item
+        return value
+
     try:
-        value = json.loads(raw)
+        value = json.loads(raw, object_pairs_hook=reject_duplicate_keys)
     except json.JSONDecodeError as exc:
         raise ActionError(f"invalid JSON: {exc.msg}") from exc
     if not isinstance(value, dict) or len(value) != 1:

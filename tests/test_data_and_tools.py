@@ -40,9 +40,10 @@ def test_prompt_requires_grounding_and_contains_no_evaluation_targets():
     task = load_tasks(ROOT / "data" / "tasks.jsonl")[0]
     prompt, trimming = assemble_prompt(task, [], 12000)
     assert "call the relevant tools before final" in prompt
-    assert '"tool_call":{"name":"find_events"' in prompt
     assert "Only cite record_id values" in prompt
     assert "CURRENT_TASK=" in prompt
+    assert '"required_type":"tool_call"' in prompt
+    assert '"allowed_names":["find_events","lookup_policy"]' in prompt
     assert trimming["kept_history_items"] == 0
     for forbidden in FORBIDDEN_PROMPT_FIELDS:
         assert f'"{forbidden}"' not in prompt
@@ -50,3 +51,32 @@ def test_prompt_requires_grounding_and_contains_no_evaluation_targets():
     assert '"allowed_tools":[]' in no_tools_prompt
     no_memory_prompt, _ = assemble_prompt(task, [], 12000, "no_memory")
     assert '"persistent_memory_enabled":false' in no_memory_prompt
+
+
+def test_prompt_exposes_exactly_one_state_dependent_next_action():
+    tasks = load_tasks(ROOT / "data" / "tasks.jsonl")
+    tool_task = tasks[0]
+    after_first_tool = [{
+        "tool_call": {"name": "find_events", "arguments": {"day": "Wednesday"}},
+        "observation": [],
+    }]
+    prompt, _ = assemble_prompt(tool_task, after_first_tool, 12000)
+    assert '"completed_actions":[{"arguments":{"day":"Wednesday"},"name":"find_events","type":"tool_call"}]' in prompt
+    assert '"allowed_names":["lookup_policy"]' in prompt
+    after_both_tools = after_first_tool + [{
+        "tool_call": {"name": "lookup_policy", "arguments": {"topic": "photography"}},
+        "observation": [],
+    }]
+    prompt, _ = assemble_prompt(tool_task, after_both_tools, 12000)
+    assert '"required_type":"final"' in prompt
+
+    memory_task = next(task for task in tasks if task["task_type"] == "cross_session_memory")
+    prompt, _ = assemble_prompt(memory_task, [], 12000)
+    assert '"allowed_operations":["search"]' in prompt
+    assert '"required_type":"memory_call"' in prompt
+    after_search = [{
+        "memory_call": {"operation": "search", "query": "accessibility preference"},
+        "result": [],
+    }]
+    prompt, _ = assemble_prompt(memory_task, after_search, 12000)
+    assert '"required_type":"tool_call"' in prompt
