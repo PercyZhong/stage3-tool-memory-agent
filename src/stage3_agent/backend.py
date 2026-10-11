@@ -7,6 +7,35 @@ from typing import Any
 from .canonical import canonical_json, state_hash
 
 
+def assistant_prefill(prompt: str) -> str:
+    marker = "\nCURRENT_TASK="
+    if marker not in prompt:
+        raise ValueError("assembled prompt is missing CURRENT_TASK divider")
+    task_text = prompt.split(marker, 1)[1]
+    try:
+        task, _ = json.JSONDecoder().raw_decode(task_text)
+        next_action = task["next_action"]
+        required = next_action["required_type"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ValueError("assembled prompt has no valid next_action") from exc
+    if required == "tool_call":
+        name = next_action["allowed_names"][0]
+        return '{"tool_call":{"name":' + canonical_json(name) + ',"arguments":'
+    if required == "memory_call":
+        operation = next_action["allowed_operations"][0]
+        if operation == "search":
+            return '{"memory_call":{"operation":"search","query":'
+        query = next_action["reuse_search_query"]
+        return (
+            '{"memory_call":{"operation":"invalidate","query":'
+            + canonical_json(query)
+            + ',"reason":'
+        )
+    if required == "final":
+        return '{"final":{"answer":'
+    raise ValueError(f"unsupported required action type: {required}")
+
+
 class ScriptedBackend:
     name = "scripted"
 
@@ -64,11 +93,15 @@ class LocalHFBackend:
         if divider not in prompt:
             raise ValueError("assembled prompt is missing CURRENT_TASK divider")
         system_content, task_content = prompt.split(divider, 1)
+        prefill = assistant_prefill(prompt)
         messages = [
             {"role": "system", "content": system_content},
             {"role": "user", "content": "CURRENT_TASK=" + task_content},
+            {"role": "assistant", "content": prefill},
         ]
-        rendered = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        rendered = self.tokenizer.apply_chat_template(
+            messages, tokenize=False, continue_final_message=True,
+        )
         inputs = self.tokenizer(rendered, return_tensors="pt").to(self.model.device)
         with self.torch.inference_mode():
             output = self.model.generate(
@@ -76,7 +109,8 @@ class LocalHFBackend:
                 max_new_tokens=self.max_new_tokens, pad_token_id=self.tokenizer.eos_token_id,
             )
         new_tokens = output[0][inputs["input_ids"].shape[1]:]
-        return self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+        continuation = self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+        return prefill + continuation
 
 
 def backend_metadata(backend: Any, model_dir: Path | None) -> dict[str, Any]:
@@ -87,4 +121,5 @@ def backend_metadata(backend: Any, model_dir: Path | None) -> dict[str, Any]:
         if hasattr(backend, "tokenizer"):
             result["tokenizer_class"] = type(backend.tokenizer).__name__
             result["chat_template_hash"] = state_hash(backend.tokenizer.chat_template or "")
+            result["assistant_prefill"] = "state_derived_json_prefix_v1"
     return result

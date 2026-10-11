@@ -128,7 +128,7 @@ def _turn_contract(next_action: dict[str, Any]) -> str:
             "This turn is only a tool selection. Do not answer the user and do not emit final or memory_call.\n"
             f"Choose exactly one name from {allowed}.\n"
             f"{argument_rules}\n"
-            "Do not copy descriptive placeholder text and do not leave arguments empty when the input provides a filter.\n"
+            "Omit optional filters not explicitly requested. Never use an empty string or placeholders such as current/current_day.\n"
             f"Output one bare JSON object whose only top-level key is tool_call; "
             f"its name must be {selected} and its arguments must be a JSON object of relevant filters."
         )

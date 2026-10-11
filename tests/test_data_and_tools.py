@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from stage3_agent.data import FORBIDDEN_PROMPT_FIELDS, load_fixture, load_tasks, public_task
+from stage3_agent.backend import assistant_prefill
 from stage3_agent.engine import assemble_prompt
 from stage3_agent.tools import CampusTools, ToolError
 
@@ -116,3 +117,32 @@ def test_prompt_exposes_exactly_one_state_dependent_next_action():
     prompt, _ = assemble_prompt(update_task, update_history, 12000)
     assert '"required_type":"final"' in prompt
     assert '"available_evidence_ids":["SCH-CS101-R2"]' in prompt
+
+
+def test_state_derived_assistant_prefill_only_supplies_action_scaffolding():
+    tasks = load_tasks(ROOT / "data" / "tasks.jsonl")
+    tool_prompt, _ = assemble_prompt(tasks[0], [], 12000)
+    assert assistant_prefill(tool_prompt) == '{"tool_call":{"name":"find_events","arguments":'
+
+    memory_task = next(task for task in tasks if task["task_type"] == "cross_session_memory")
+    memory_prompt, _ = assemble_prompt(memory_task, [], 12000)
+    assert assistant_prefill(memory_prompt) == '{"memory_call":{"operation":"search","query":'
+
+    update_task = next(task for task in tasks if task["task_type"] == "conflict_update")
+    update_history = [{
+        "memory_call": {"operation": "search", "query": "CS101 schedule"},
+        "result": [],
+    }, {
+        "tool_call": {"name": "lookup_schedule", "arguments": {"course": "CS101"}},
+        "observation": [{"record_id": "SCH-CS101-R2"}],
+    }]
+    invalidate_prompt, _ = assemble_prompt(update_task, update_history, 12000)
+    assert assistant_prefill(invalidate_prompt) == (
+        '{"memory_call":{"operation":"invalidate","query":"CS101 schedule","reason":'
+    )
+    update_history.append({
+        "memory_call": {"operation": "invalidate", "query": "CS101 schedule"},
+        "result": [],
+    })
+    final_prompt, _ = assemble_prompt(update_task, update_history, 12000)
+    assert assistant_prefill(final_prompt) == '{"final":{"answer":'
