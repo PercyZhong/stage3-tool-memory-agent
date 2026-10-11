@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from .canonical import canonical_json, state_hash
+
+
+def is_complete_json_object(raw: str) -> bool:
+    try:
+        value, end = json.JSONDecoder().raw_decode(raw)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(value, dict) and not raw[end:].strip()
 
 
 def assistant_prefill(prompt: str) -> str:
@@ -20,7 +29,17 @@ def assistant_prefill(prompt: str) -> str:
         raise ValueError("assembled prompt has no valid next_action") from exc
     if required == "tool_call":
         name = next_action["allowed_names"][0]
-        return '{"tool_call":{"name":' + canonical_json(name) + ',"arguments":'
+        prefix = '{"tool_call":{"name":' + canonical_json(name) + ',"arguments":{'
+        if name == "lookup_schedule":
+            return prefix + '"course":'
+        if name == "lookup_policy":
+            return prefix + '"topic":'
+        weekday = re.search(
+            r"\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b",
+            str(task.get("input", "")),
+            flags=re.IGNORECASE,
+        )
+        return prefix + ('"day":' if weekday else '"query":')
     if required == "memory_call":
         operation = next_action["allowed_operations"][0]
         if operation == "search":
@@ -75,13 +94,15 @@ class LocalHFBackend:
             raise FileNotFoundError(f"local model directory does not exist: {model_dir}")
         try:
             import torch
-            from transformers import AutoModelForCausalLM, AutoTokenizer
+            from transformers import AutoModelForCausalLM, AutoTokenizer, StoppingCriteria, StoppingCriteriaList
         except ImportError as exc:
             raise RuntimeError("local_hf requires installation with the 'hf' extra") from exc
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         self.torch = torch
+        self.stopping_criteria_class = StoppingCriteria
+        self.stopping_criteria_list_class = StoppingCriteriaList
         self.max_new_tokens = max_new_tokens
         self.tokenizer = AutoTokenizer.from_pretrained(str(model_dir), local_files_only=True)
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -103,10 +124,24 @@ class LocalHFBackend:
             messages, tokenize=False, continue_final_message=True,
         )
         inputs = self.tokenizer(rendered, return_tensors="pt").to(self.model.device)
+        tokenizer = self.tokenizer
+        prompt_tokens = inputs["input_ids"].shape[1]
+        prefix = prefill
+        base_class = self.stopping_criteria_class
+
+        class StopAfterCompleteJson(base_class):
+            def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> bool:
+                del scores, kwargs
+                generated = input_ids[0, prompt_tokens:]
+                continuation = tokenizer.decode(generated, skip_special_tokens=True)
+                return is_complete_json_object(prefix + continuation)
+
+        stopping = self.stopping_criteria_list_class([StopAfterCompleteJson()])
         with self.torch.inference_mode():
             output = self.model.generate(
                 **inputs, do_sample=False, temperature=None, top_p=None,
                 max_new_tokens=self.max_new_tokens, pad_token_id=self.tokenizer.eos_token_id,
+                stopping_criteria=stopping,
             )
         new_tokens = output[0][inputs["input_ids"].shape[1]:]
         continuation = self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
@@ -121,5 +156,6 @@ def backend_metadata(backend: Any, model_dir: Path | None) -> dict[str, Any]:
         if hasattr(backend, "tokenizer"):
             result["tokenizer_class"] = type(backend.tokenizer).__name__
             result["chat_template_hash"] = state_hash(backend.tokenizer.chat_template or "")
-            result["assistant_prefill"] = "state_derived_json_prefix_v1"
+            result["assistant_prefill"] = "state_derived_json_prefix_v2"
+            result["generation_stop"] = "first_complete_json_object"
     return result

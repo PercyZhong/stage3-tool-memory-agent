@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from stage3_agent.data import FORBIDDEN_PROMPT_FIELDS, load_fixture, load_tasks, public_task
-from stage3_agent.backend import assistant_prefill
+from stage3_agent.backend import assistant_prefill, is_complete_json_object
 from stage3_agent.engine import assemble_prompt
 from stage3_agent.tools import CampusTools, ToolError
 
@@ -122,7 +122,7 @@ def test_prompt_exposes_exactly_one_state_dependent_next_action():
 def test_state_derived_assistant_prefill_only_supplies_action_scaffolding():
     tasks = load_tasks(ROOT / "data" / "tasks.jsonl")
     tool_prompt, _ = assemble_prompt(tasks[0], [], 12000)
-    assert assistant_prefill(tool_prompt) == '{"tool_call":{"name":"find_events","arguments":'
+    assert assistant_prefill(tool_prompt) == '{"tool_call":{"name":"find_events","arguments":{"day":'
 
     memory_task = next(task for task in tasks if task["task_type"] == "cross_session_memory")
     memory_prompt, _ = assemble_prompt(memory_task, [], 12000)
@@ -146,3 +146,15 @@ def test_state_derived_assistant_prefill_only_supplies_action_scaffolding():
     })
     final_prompt, _ = assemble_prompt(update_task, update_history, 12000)
     assert assistant_prefill(final_prompt) == '{"final":{"answer":'
+
+    no_day_task = next(task for task in tasks if task["task_id"] == "memory_02")
+    no_day_history = [{
+        "memory_call": {"operation": "search", "query": "schedule preference"},
+        "result": [],
+    }]
+    no_day_prompt, _ = assemble_prompt(no_day_task, no_day_history, 12000)
+    assert assistant_prefill(no_day_prompt) == '{"tool_call":{"name":"find_events","arguments":{"query":'
+
+    assert is_complete_json_object('{"tool_call":{"name":"find_events","arguments":{"day":"Tuesday"}}}')
+    assert not is_complete_json_object('{"tool_call":{"name":"find_events","arguments":')
+    assert not is_complete_json_object('{}\n{}')
