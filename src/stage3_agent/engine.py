@@ -106,6 +106,45 @@ def _action_state(task: dict[str, Any], history: list[dict[str, Any]], arm: str)
     return completed, guidance
 
 
+def _turn_contract(next_action: dict[str, Any]) -> str:
+    required = next_action["required_type"]
+    if required == "tool_call":
+        allowed = canonical_json(next_action["allowed_names"])
+        selected = canonical_json(next_action["allowed_names"][0])
+        return (
+            "MANDATORY_NEXT_RESPONSE:\n"
+            "This turn is only a tool selection. Do not answer the user and do not emit final or memory_call.\n"
+            f"Choose exactly one name from {allowed}.\n"
+            'Output one bare JSON object with exactly this structure: '
+            f'{{"tool_call":{{"name":{selected},"arguments":{{}}}}}}'
+        )
+    if required == "memory_call":
+        operation = next_action["allowed_operations"][0]
+        if operation == "search":
+            return (
+                "MANDATORY_NEXT_RESPONSE:\n"
+                "This turn is only a persistent-memory search. Do not answer the user and do not emit tool_call or final.\n"
+                'Output one bare JSON object with exactly this structure: '
+                '{"memory_call":{"operation":"search","query":"short relevant keywords"}}'
+            )
+        return (
+            "MANDATORY_NEXT_RESPONSE:\n"
+            "This turn is only a stale-memory invalidation. Do not answer the user and do not emit tool_call or final.\n"
+            'Output one bare JSON object with exactly this structure: '
+            '{"memory_call":{"operation":"invalidate","query":"stale memory keywords",'
+            '"reason":"superseded by authoritative current tool record"}}'
+        )
+    evidence = canonical_json(next_action["available_evidence_ids"])
+    return (
+        "MANDATORY_NEXT_RESPONSE:\n"
+        "This turn is only the final answer. Do not emit tool_call or memory_call.\n"
+        f"evidence_ids may contain only IDs from {evidence}.\n"
+        'Output one bare JSON object with exactly this structure: '
+        '{"final":{"answer":{"result":"grounded result"},'
+        f'"evidence_ids":{evidence},"text":"brief grounded answer"}}}}'
+    )
+
+
 def assemble_prompt(
     task: dict[str, Any], history: list[dict[str, Any]], budget: int, arm: str = "full",
 ) -> tuple[str, dict[str, Any]]:
@@ -118,9 +157,10 @@ def assemble_prompt(
     safe_task["next_action"] = next_action
     if FORBIDDEN_PROMPT_FIELDS & safe_task.keys():
         raise AssertionError("evaluation fields leaked into model prompt")
+    footer = "\n" + _turn_contract(next_action)
     header = f"{SYSTEM_RULES}\nCURRENT_TASK={canonical_json(safe_task)}\nRECENT_HISTORY="
     kept: list[dict[str, Any]] = []
-    used = len(header)
+    used = len(header) + len(footer)
     for item in reversed(history):
         rendered = canonical_json(item)
         if used + len(rendered) > budget:
@@ -128,7 +168,7 @@ def assemble_prompt(
         kept.append(item)
         used += len(rendered)
     kept.reverse()
-    prompt = header + canonical_json(kept)
+    prompt = header + canonical_json(kept) + footer
     return prompt, {
         "char_budget": budget,
         "original_history_items": len(history),

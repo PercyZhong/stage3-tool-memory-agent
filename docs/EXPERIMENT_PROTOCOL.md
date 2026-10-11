@@ -20,7 +20,7 @@ Each run gets a fresh UUID and memory database. Namespaces contain run ID, arm, 
 
 At each step the backend emits exactly one JSON action: `tool_call`, `memory_call`, or `final`. Parsing and schema checks occur before execution. Tool names must be on both the global and per-task allowlists. A repeated action is rejected. The first invalid response is returned as a correctable error; a second invalid response terminates the task. Eight actions is the hard limit.
 
-Working context always preserves system rules and the current public question, then retains the newest complete observations within a character budget. Each model request event records the full assembled prompt and trimming metadata. Persistent memory is searched only through an explicit action. Update tasks retrieve old memory but must ground the final answer in the task's authoritative fixture version, then invalidate matching stale records.
+Working context always preserves system rules and the current public question, then retains the newest complete observations within a character budget. A short state-derived contract at the end of every prompt repeats the one permitted next action and its JSON shape; it contains no evaluation targets or scripted answer. Each model request event records the full assembled prompt and trimming metadata. Persistent memory is searched only through an explicit action. Update tasks retrieve old memory but must ground the final answer in the task's authoritative fixture version, then invalidate matching stale records.
 
 ## Metrics
 

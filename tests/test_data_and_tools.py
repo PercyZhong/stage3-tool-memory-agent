@@ -44,6 +44,9 @@ def test_prompt_requires_grounding_and_contains_no_evaluation_targets():
     assert "CURRENT_TASK=" in prompt
     assert '"required_type":"tool_call"' in prompt
     assert '"allowed_names":["find_events","lookup_policy"]' in prompt
+    assert prompt.endswith(
+        '{"tool_call":{"name":"find_events","arguments":{}}}'
+    )
     assert trimming["kept_history_items"] == 0
     for forbidden in FORBIDDEN_PROMPT_FIELDS:
         assert f'"{forbidden}"' not in prompt
@@ -69,14 +72,40 @@ def test_prompt_exposes_exactly_one_state_dependent_next_action():
     }]
     prompt, _ = assemble_prompt(tool_task, after_both_tools, 12000)
     assert '"required_type":"final"' in prompt
+    assert "This turn is only the final answer" in prompt
+    assert '"evidence_ids":[]' in prompt
 
     memory_task = next(task for task in tasks if task["task_type"] == "cross_session_memory")
     prompt, _ = assemble_prompt(memory_task, [], 12000)
     assert '"allowed_operations":["search"]' in prompt
     assert '"required_type":"memory_call"' in prompt
+    assert "This turn is only a persistent-memory search" in prompt
+    assert prompt.endswith(
+        '{"memory_call":{"operation":"search","query":"short relevant keywords"}}'
+    )
     after_search = [{
         "memory_call": {"operation": "search", "query": "accessibility preference"},
         "result": [],
     }]
     prompt, _ = assemble_prompt(memory_task, after_search, 12000)
     assert '"required_type":"tool_call"' in prompt
+    assert "This turn is only a tool selection" in prompt
+
+    update_task = next(task for task in tasks if task["task_type"] == "conflict_update")
+    update_history = [{
+        "memory_call": {"operation": "search", "query": "CS101 schedule"},
+        "result": [],
+    }, {
+        "tool_call": {"name": "lookup_schedule", "arguments": {"course": "CS101"}},
+        "observation": [{"record_id": "SCH-CS101-R2"}],
+    }]
+    prompt, _ = assemble_prompt(update_task, update_history, 12000)
+    assert '"allowed_operations":["invalidate"]' in prompt
+    assert "This turn is only a stale-memory invalidation" in prompt
+    update_history.append({
+        "memory_call": {"operation": "invalidate", "query": "CS101 schedule"},
+        "result": [],
+    })
+    prompt, _ = assemble_prompt(update_task, update_history, 12000)
+    assert '"required_type":"final"' in prompt
+    assert '"evidence_ids":["SCH-CS101-R2"]' in prompt
