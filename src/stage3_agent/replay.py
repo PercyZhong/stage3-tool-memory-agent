@@ -109,8 +109,8 @@ def validate_recording(run: Path, from_task: str | None = None) -> tuple[list[st
             errors.append(f"event {event['seq']}: parser output mismatch")
         execution = events[index + 2] if index + 2 < len(events) else None
         expected_types = {
-            "tool_call": {"tool_observation", "tool_error"},
-            "memory_call": {"memory_search", "memory_write", "memory_invalidate", "memory_error"},
+            "tool_call": {"tool_observation", "tool_error", "error"},
+            "memory_call": {"memory_search", "memory_write", "memory_invalidate", "memory_error", "error"},
             "final": {"final_answer"},
         }[action.kind]
         if execution is None or execution["event_type"] not in expected_types:
@@ -119,6 +119,12 @@ def validate_recording(run: Path, from_task: str | None = None) -> tuple[list[st
             errors.append(f"event {event['seq']}: recorded action arguments differ")
         elif action.kind == "final" and execution["output"] != action.payload:
             errors.append(f"event {event['seq']}: recorded final answer differs")
+        elif execution["event_type"] == "error":
+            expected_action = {"kind": action.kind, "payload": action.payload}
+            if execution["output"].get("error") != "duplicate action":
+                errors.append(f"event {event['seq']}: unexpected generic action error")
+            if execution["output"].get("action") != expected_action:
+                errors.append(f"event {event['seq']}: duplicate-action payload differs")
 
     if response_position != len(responses):
         errors.append(f"unconsumed saved responses: {len(responses) - response_position}")

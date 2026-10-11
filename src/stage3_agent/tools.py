@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -46,11 +47,24 @@ class CampusTools:
     def _matches(row: dict[str, Any], arguments: dict[str, Any]) -> bool:
         for key, wanted in arguments.items():
             if key == "query":
-                if str(wanted).casefold() not in str(row.get("name", "")).casefold():
+                if not CampusTools._query_matches(str(wanted), str(row.get("name", ""))):
                     return False
             elif str(row.get(key, "")).casefold() != str(wanted).casefold():
                 return False
         return True
+
+    @staticmethod
+    def _query_matches(query: str, name: str) -> bool:
+        """Deterministic keyword match with a small, documented generic-word filter."""
+        ignored = {
+            "activity", "current", "details", "eligibility", "event", "events", "latest",
+            "registration", "rule", "schedule", "the",
+        }
+        query_tokens = [token for token in re.findall(r"[a-z0-9]+", query.casefold()) if token not in ignored]
+        name_tokens = set(re.findall(r"[a-z0-9]+", name.casefold()))
+        if query_tokens:
+            return all(token in name_tokens for token in query_tokens)
+        return query.strip().casefold() in name.casefold()
 
     def _record(self, row: dict[str, Any]) -> dict[str, Any]:
         return {

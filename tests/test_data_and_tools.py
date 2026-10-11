@@ -28,6 +28,12 @@ def test_tools_are_local_filtered_and_versioned():
         tools.call("find_events", {}, ["lookup_schedule"])
     with pytest.raises(ToolError):
         tools.call("lookup_schedule", {"course": "x" * 257}, ["lookup_schedule"])
+    photography = tools.call(
+        "find_events", {"day": "Thursday", "query": "latest photography event"}, ["find_events"]
+    )
+    assert [row["record_id"] for row in photography] == ["EV-PHOTO-THU-R2"]
+    music = tools.call("find_events", {"query": "Music Jam eligibility"}, ["find_events"])
+    assert [row["record_id"] for row in music] == ["EV-MUSIC-FRI-R2"]
 
 
 def test_prompt_requires_grounding_and_contains_no_evaluation_targets():
@@ -40,3 +46,7 @@ def test_prompt_requires_grounding_and_contains_no_evaluation_targets():
     assert trimming["kept_history_items"] == 0
     for forbidden in FORBIDDEN_PROMPT_FIELDS:
         assert f'"{forbidden}"' not in prompt
+    no_tools_prompt, _ = assemble_prompt(task, [], 12000, "no_tools")
+    assert '"allowed_tools":[]' in no_tools_prompt
+    no_memory_prompt, _ = assemble_prompt(task, [], 12000, "no_memory")
+    assert '"persistent_memory_enabled":false' in no_memory_prompt

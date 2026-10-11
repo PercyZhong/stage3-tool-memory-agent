@@ -82,3 +82,37 @@ def test_invalid_backend_terminates_without_inventing_final(tmp_path, monkeypatc
     assert all(event["output"]["reason"] == "invalid_action_limit" for event in terminations)
     assert replay_main(["--run", str(run_dir), "--mode", "recorded", "--out", str(replay_dir)]) == 0
     assert verify_main(["--run", str(run_dir), "--replay", str(replay_dir)]) == 0
+
+
+def test_duplicate_actions_terminate_and_replay(tmp_path, monkeypatch):
+    class DuplicateBackend:
+        name = "scripted"
+
+        def __init__(self, task):
+            self.raw = json.dumps({
+                "tool_call": {"name": task["allowed_tools"][0], "arguments": {}}
+            })
+
+        def generate(self, prompt):
+            del prompt
+            return self.raw
+
+    monkeypatch.setattr("stage3_agent.run.ScriptedBackend", lambda task, arm: DuplicateBackend(task))
+    monkeypatch.chdir(ROOT)
+    run_dir = tmp_path / "duplicate-run"
+    replay_dir = tmp_path / "duplicate-replay"
+    assert run_main([
+        "--backend", "scripted", "--suite", str(ROOT / "data" / "tasks.jsonl"),
+        "--arm", "full", "--out", str(run_dir),
+    ]) == 0
+    metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert all(task["invalid_action"] == 2 for task in metrics["tasks"])
+    assert all(task["step_limit"] is False for task in metrics["tasks"])
+    events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    duplicate_errors = [
+        event for event in events
+        if event["event_type"] == "error" and event["output"].get("error") == "duplicate action"
+    ]
+    assert len(duplicate_errors) == 24
+    assert replay_main(["--run", str(run_dir), "--mode", "recorded", "--out", str(replay_dir)]) == 0
+    assert verify_main(["--run", str(run_dir), "--replay", str(replay_dir)]) == 0
