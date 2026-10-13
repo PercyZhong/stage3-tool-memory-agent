@@ -31,15 +31,15 @@ def assistant_prefill(prompt: str) -> str:
         name = next_action["allowed_names"][0]
         prefix = '{"tool_call":{"name":' + canonical_json(name) + ',"arguments":{'
         if name == "lookup_schedule":
-            return prefix + '"course":'
+            return prefix + '"course":"'
         if name == "lookup_policy":
-            return prefix + '"topic":'
+            return prefix + '"topic":"'
         weekday = re.search(
             r"\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b",
             str(task.get("input", "")),
             flags=re.IGNORECASE,
         )
-        return prefix + ('"day":' if weekday else '"query":')
+        return prefix + ('"day":"' if weekday else '"query":"')
     if required == "memory_call":
         operation = next_action["allowed_operations"][0]
         if operation == "search":
@@ -156,6 +156,6 @@ def backend_metadata(backend: Any, model_dir: Path | None) -> dict[str, Any]:
         if hasattr(backend, "tokenizer"):
             result["tokenizer_class"] = type(backend.tokenizer).__name__
             result["chat_template_hash"] = state_hash(backend.tokenizer.chat_template or "")
-            result["assistant_prefill"] = "state_derived_json_prefix_v2"
+            result["assistant_prefill"] = "state_derived_json_prefix_v3"
             result["generation_stop"] = "first_complete_json_object"
     return result

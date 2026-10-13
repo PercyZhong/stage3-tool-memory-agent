@@ -122,7 +122,22 @@ def test_prompt_exposes_exactly_one_state_dependent_next_action():
 def test_state_derived_assistant_prefill_only_supplies_action_scaffolding():
     tasks = load_tasks(ROOT / "data" / "tasks.jsonl")
     tool_prompt, _ = assemble_prompt(tasks[0], [], 12000)
-    assert assistant_prefill(tool_prompt) == '{"tool_call":{"name":"find_events","arguments":{"day":'
+    assert assistant_prefill(tool_prompt) == '{"tool_call":{"name":"find_events","arguments":{"day":"'
+
+    after_event = [{
+        "tool_call": {"name": "find_events", "arguments": {"day": "Wednesday"}},
+        "observation": [],
+    }]
+    policy_prompt, _ = assemble_prompt(tasks[0], after_event, 12000)
+    assert assistant_prefill(policy_prompt) == (
+        '{"tool_call":{"name":"lookup_policy","arguments":{"topic":"'
+    )
+
+    schedule_task = next(task for task in tasks if task["task_id"] == "tool_03")
+    schedule_prompt, _ = assemble_prompt(schedule_task, [], 12000)
+    assert assistant_prefill(schedule_prompt) == (
+        '{"tool_call":{"name":"lookup_schedule","arguments":{"course":"'
+    )
 
     memory_task = next(task for task in tasks if task["task_type"] == "cross_session_memory")
     memory_prompt, _ = assemble_prompt(memory_task, [], 12000)
@@ -153,7 +168,7 @@ def test_state_derived_assistant_prefill_only_supplies_action_scaffolding():
         "result": [],
     }]
     no_day_prompt, _ = assemble_prompt(no_day_task, no_day_history, 12000)
-    assert assistant_prefill(no_day_prompt) == '{"tool_call":{"name":"find_events","arguments":{"query":'
+    assert assistant_prefill(no_day_prompt) == '{"tool_call":{"name":"find_events","arguments":{"query":"'
 
     assert is_complete_json_object('{"tool_call":{"name":"find_events","arguments":{"day":"Tuesday"}}}')
     assert not is_complete_json_object('{"tool_call":{"name":"find_events","arguments":')

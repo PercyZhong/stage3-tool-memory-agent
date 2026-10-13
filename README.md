@@ -18,7 +18,7 @@ The scripted backend is an engineering oracle for offline tests. It is not a sub
 
 `local_hf` accepts only an existing local directory and calls Transformers with `local_files_only=True`. Nothing downloads weights. Model prompts contain the current public task fields plus the final answer's field names and primitive types so exact scoring has a declared output contract. Target values, required evidence, expected behavior, setup facts, and scripted actions are excluded. Tools accept limited typed arguments and read local JSON only. Tool output is presented as untrusted data.
 
-For small instruct models, `local_hf` uses a state-derived assistant prefix containing the required JSON action wrapper, any tool name or memory operation already selected by the visible state machine, and one tool argument key derived from the public question and tool schema. The model supplies argument values and answer content. Generation stops at the first complete JSON object; that complete prefixed response is logged and replayed through the same strict parser.
+For small instruct models, `local_hf` uses a state-derived assistant prefix containing the required JSON action wrapper, any tool name or memory operation already selected by the visible state machine, and the opening quote for one string tool argument derived from the public question and tool schema. The model supplies the argument value and answer content. Generation stops at the first complete JSON object; that complete prefixed response is logged and replayed through the same strict parser.
 
 No real student data appears here. User IDs all begin with `synthetic-`. Model weights, runtime SQLite files, complete `runs/`, archives, caches, environment files, and secrets are ignored by Git.
 
